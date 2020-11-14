@@ -283,6 +283,13 @@ class CloudCache:
         return hi
 
     def _save_dir(self, path_info, tree, hash_info, save_link=True, **kwargs):
+
+        # orig
+        # hash_info = HashInfo(name='md5', value='e1a0cf7fcebe1c12bc0adeaf7ca38dfd.dir', dir_info=<dvc.dir_info.DirInfo object at 0x12a6329d0>, size=61854, nfiles=25)
+
+        # new
+        # hash_info = HashInfo(name='md5', value='e1a0cf7fcebe1c12bc0adeaf7ca38dfd.dir', dir_info=<dvc.dir_info.DirInfo object at 0x12d71a040>, size=3469, nfiles=25)
+
         if not hash_info.dir_info:
             hash_info.dir_info = tree.cache.get_dir_cache(hash_info)
         hi = self.save_dir_info(hash_info.dir_info, hash_info)
@@ -291,9 +298,10 @@ class CloudCache:
             desc="Saving " + path_info.name,
             unit="file",
         ):
-            self._save_file(
-                entry_info, tree, entry_hash, save_link=False, **kwargs
-            )
+            if entry_hash.size:  # means its NOT using a vdir and the file exists in the workspace
+                self._save_file(
+                    entry_info, tree, entry_hash, save_link=False, **kwargs
+                )
 
         if save_link:
             self.tree.state.save_link(path_info)
@@ -622,6 +630,7 @@ class CloudCache:
     @use_state
     def get_hash(self, tree, path_info):
         hash_info = tree.get_hash(path_info)
+        # This is where the new hash in .dvc/cache/xx/*.dir gets created
         if not hash_info.isdir:
             assert hash_info.name == self.tree.PARAM_CHECKSUM
             return hash_info

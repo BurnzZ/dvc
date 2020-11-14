@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 from funcy import cached_property, decorator
 
 from dvc.dir_info import DirInfo
+from dvc.hash_info import HashInfo
+from dvc.path_info import PosixPathInfo
 from dvc.exceptions import DvcException, DvcIgnoreInCollectedDirError
 from dvc.ignore import DvcIgnore
 from dvc.path_info import URLInfo
@@ -76,6 +78,7 @@ class BaseTree:
 
         self.verify = config.get("verify", self.DEFAULT_VERIFY)
         self.path_info = None
+        self.vdir = None
 
     @cached_property
     def hash_jobs(self):
@@ -297,20 +300,71 @@ class BaseTree:
 
         file_infos = set()
 
+        # - stage.reload().outs
+        #   - [LocalOutput: 'rpm-images']
+
+        # - hash_info = stage.reload().outs[0].hash_info
+        #   - HashInfo(name='md5', value='ca33682bbdb304025242bbc1b0d79d52.dir', dir_info=None, size=58385, nfiles=24)
+        #       - If I could attach this somehow to the vdir.
+        #       - then I won't need stage, only the 'vdir'
+
+        # - dir_info = self.cache.load_dir_cache(hash_info)
+        #   - <dvc.dir_info.DirInfo object at 0x103e247c0>
+
+        # - dir_info.to_list()
+        # [{'md5': '194577a7e20bdcc7afbb718f502c134c', 'relpath': '.DS_Store'}, {'md5': '6f398d502ec50b2674d329130221d822', 'relpath': 'ProblemList.txt'}, {'md5': 'f77412af6a7bb0153be6f90077e7e2eb', 'relpath': 'problem-E-01/1.png'}, {'md5': 'a0b35192e8583255737bd790bb545704', 'relpath': 'problem-E-01/2.png'}, {'md5': '2ccdba5ed29208a802fba9147c554b84', 'relpath': 'problem-E-01/3.png'}, {'md5': 'ddd8cf838688e3bb9fa8ffba233f2bbc', 'relpath': 'problem-E-01/4.png'}, {'md5': '480b7470db43097e3cf78ee024f6f101', 'relpath': 'problem-E-01/5.png'}, {'md5': '64c0d57bae50d2a8effbb29abbdd1093', 'relpath': 'problem-E-01/6.png'}, {'md5': '9cd4266918da92c98d1947b4aac643bb', 'relpath': 'problem-E-01/7.png'}, {'md5': '7bbc0fbc545fd6e603f20c1c3faf5caa', 'relpath': 'problem-E-01/8.png'}, {'md5': '82f79c9899f212ad624162c3c84e4523', 'relpath': 'problem-E-01/A.png'}, {'md5': 'bb66147bfdaf5f4e2e8a31d673166b8c', 'relpath': 'problem-E-01/B.png'}, {'md5': '2e649c878bae8ace221b15354a617d6b', 'relpath': 'problem-E-01/Basic Problem E-01.PNG'}, {'md5': 'ccc9c569c143f9825a667d87c0ccc37e', 'relpath': 'problem-E-01/C-copy.png'}, {'md5': 'b65f54c53e08702f3e52689e3e79d923', 'relpath': 'problem-E-01/C.png'}, {'md5': '3121fb71be8dc32a28182106fd1b7783', 'relpath': 'problem-E-01/D-copy.png'}, {'md5': '7bbc0fbc545fd6e603f20c1c3faf5caa', 'relpath': 'problem-E-01/D.png'}, {'md5': '36c2b50bb5c9eb586641857fa28c6848', 'relpath': 'problem-E-01/E.png'}, {'md5': 'bccb8fa421d026b7f705b3834c11064f', 'relpath': 'problem-E-01/F.png'}, {'md5': '845fda247e14c6c06226b7fc38ff860e', 'relpath': 'problem-E-01/G.png'}, {'md5': '2a6d83e852c48423eccaccdd140bba5e', 'relpath': 'problem-E-01/H-copy.png'}, {'md5': '222bc681fdd1bac4f6ab58a1678da38e', 'relpath': 'problem-E-01/H.png'}, {'md5': 'b026324c6904b2a9cb4b88d6d61c81d1', 'relpath': 'problem-E-01/ProblemAnswer.txt'}, {'md5': '883b7130fff6975a2c7a7960137d1c44', 'relpath': 'problem-E-01/ProblemData.txt'}]
+        #   - note that the new file is not contained here
+        #   - this is the original unchanged one.
+
+        # The dir_info could then basically become the `file_infos`
+        #   - but need to add the 'rpm-images' prefix
+        #       - this is easy: `path_info / '.DS_Store'` == PosixPathInfo: 'rpm-images/.DS_Store'
+
         for fname in self.walk_files(path_info, **kwargs):
             if DvcIgnore.DVCIGNORE_FILE == fname.name:
                 raise DvcIgnoreInCollectedDirError(fname.parent)
 
             file_infos.add(fname)
 
+        # file_infos
+        # {PosixPathInfo: 'rpm-images/problem-E-01/C.png', PosixPathInfo: 'rpm-images/problem-E-01/Basic Problem E-01.PNG', PosixPathInfo: 'rpm-images/problem-E-01/F.png', PosixPathInfo: 'rpm-images/problem-E-01/D.png', PosixPathInfo: 'rpm-images/problem-E-01/G.png', PosixPathInfo: 'rpm-images/ProblemList.txt', PosixPathInfo: 'rpm-images/problem-E-01/7.png', PosixPathInfo: 'rpm-images/problem-E-01/ProblemAnswer.txt', PosixPathInfo: 'rpm-images/problem-E-01/B-new.png', PosixPathInfo: 'rpm-images/problem-E-01/2.png', PosixPathInfo: 'rpm-images/problem-E-01/H-copy.png', PosixPathInfo: 'rpm-images/problem-E-01/6.png', PosixPathInfo: 'rpm-images/problem-E-01/5.png', PosixPathInfo: 'rpm-images/problem-E-01/B.png', PosixPathInfo: 'rpm-images/problem-E-01/A.png', PosixPathInfo: 'rpm-images/.DS_Store', PosixPathInfo: 'rpm-images/problem-E-01/E.png', PosixPathInfo: 'rpm-images/problem-E-01/4.png', PosixPathInfo: 'rpm-images/problem-E-01/C-copy.png', PosixPathInfo: 'rpm-images/problem-E-01/1.png', PosixPathInfo: 'rpm-images/problem-E-01/3.png', PosixPathInfo: 'rpm-images/problem-E-01/D-copy.png', PosixPathInfo: 'rpm-images/problem-E-01/8.png', PosixPathInfo: 'rpm-images/problem-E-01/H.png', PosixPathInfo: 'rpm-images/problem-E-01/ProblemData.txt'}
+
         hash_infos = {fi: self.state.get(fi) for fi in file_infos}
+        # {PosixPathInfo: 'rpm-images/problem-E-01/C.png': HashInfo(name='md5', value='b65f54c53e08702f3e52689e3e79d923', dir_info=None, size=1365, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/Basic Problem E-01.PNG': HashInfo(name='md5', value='2e649c878bae8ace221b15354a617d6b', dir_info=None, size=22477, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/F.png': HashInfo(name='md5', value='bccb8fa421d026b7f705b3834c11064f', dir_info=None, size=1383, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/D.png': HashInfo(name='md5', value='7bbc0fbc545fd6e603f20c1c3faf5caa', dir_info=None, size=986, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/G.png': HashInfo(name='md5', value='845fda247e14c6c06226b7fc38ff860e', dir_info=None, size=1328, nfiles=None), PosixPathInfo: 'rpm-images/ProblemList.txt': HashInfo(name='md5', value='6f398d502ec50b2674d329130221d822', dir_info=None, size=18, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/7.png': HashInfo(name='md5', value='9cd4266918da92c98d1947b4aac643bb', dir_info=None, size=1525, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/ProblemAnswer.txt': HashInfo(name='md5', value='b026324c6904b2a9cb4b88d6d61c81d1', dir_info=None, size=3, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/B-new.png': None, PosixPathInfo: 'rpm-images/problem-E-01/2.png': HashInfo(name='md5', value='a0b35192e8583255737bd790bb545704', dir_info=None, size=1192, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/H-copy.png': HashInfo(name='md5', value='2a6d83e852c48423eccaccdd140bba5e', dir_info=None, size=2643, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/6.png': HashInfo(name='md5', value='64c0d57bae50d2a8effbb29abbdd1093', dir_info=None, size=2552, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/5.png': HashInfo(name='md5', value='480b7470db43097e3cf78ee024f6f101', dir_info=None, size=1281, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/B.png': HashInfo(name='md5', value='bb66147bfdaf5f4e2e8a31d673166b8c', dir_info=None, size=960, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/A.png': HashInfo(name='md5', value='82f79c9899f212ad624162c3c84e4523', dir_info=None, size=866, nfiles=None), PosixPathInfo: 'rpm-images/.DS_Store': HashInfo(name='md5', value='194577a7e20bdcc7afbb718f502c134c', dir_info=None, size=6148, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/E.png': HashInfo(name='md5', value='36c2b50bb5c9eb586641857fa28c6848', dir_info=None, size=1039, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/4.png': HashInfo(name='md5', value='ddd8cf838688e3bb9fa8ffba233f2bbc', dir_info=None, size=1240, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/C-copy.png': HashInfo(name='md5', value='ccc9c569c143f9825a667d87c0ccc37e', dir_info=None, size=3081, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/1.png': HashInfo(name='md5', value='f77412af6a7bb0153be6f90077e7e2eb', dir_info=None, size=1829, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/3.png': HashInfo(name='md5', value='2ccdba5ed29208a802fba9147c554b84', dir_info=None, size=1371, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/D-copy.png': HashInfo(name='md5', value='3121fb71be8dc32a28182106fd1b7783', dir_info=None, size=2812, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/8.png': HashInfo(name='md5', value='7bbc0fbc545fd6e603f20c1c3faf5caa', dir_info=None, size=986, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/H.png': HashInfo(name='md5', value='222bc681fdd1bac4f6ab58a1678da38e', dir_info=None, size=1282, nfiles=None), PosixPathInfo: 'rpm-images/problem-E-01/ProblemData.txt': HashInfo(name='md5', value='883b7130fff6975a2c7a7960137d1c44', dir_info=None, size=18, nfiles=None)}
+
+        # NOTES: The `hash_infos` basically have the md5 values added on top of
+        # the `file_infos`.
+        #   - with the 'size' data
+
+        # TODO: refactor
+
+        if self.vdir:
+            vhash_infos = {}
+            for fname in self.cache.load_dir_cache(self.vdir.hash_info).to_list():
+                fi = path_info / fname['relpath']
+                hi = HashInfo('md5', fname['md5'])  # no size is saved in the cache
+                vhash_infos[fi] = hi
+
+            # This contains the new file
+            if self.vdir.operation == 'cp':
+                hash_infos = {**hash_infos, **vhash_infos}
+
         not_in_state = {fi for fi, hi in hash_infos.items() if hi is None}
+        # {PosixPathInfo: 'rpm-images/problem-E-01/B-new.png'}
 
         new_hash_infos = self._calculate_hashes(not_in_state)
+        # {PosixPathInfo: 'rpm-images/problem-E-01/B-new.png': HashInfo(name='md5', value='01c857535d2e69aea214d7793d7d376d', dir_info=None, size=3469, nfiles=None)}
+
         hash_infos.update(new_hash_infos)
 
-        dir_info = DirInfo()
+        dir_info = DirInfo(self.vdir)
         for fi, hi in hash_infos.items():
+            # fi
+            # PosixPathInfo: 'rpm-images/problem-E-01/C.png'
+
+            # hi
+            # HashInfo(name='md5', value='b65f54c53e08702f3e52689e3e79d923', dir_info=None, size=1365, nfiles=None)
+
             # NOTE: this is lossy transformation:
             #   "hey\there" -> "hey/there"
             #   "hey/there" -> "hey/there"
@@ -321,13 +375,35 @@ class BaseTree:
             # filenames on Windows and "\" on Unix
             dir_info.trie[fi.relative_to(path_info).parts] = hi
 
+            # fi.relative_to(path_info).parts
+            # ('problem-E-01', 'C.png')
+
+            # after one iteration, this is what `dir_info.trie` looks like
+            # Trie([(('problem-E-01', 'C.png'), HashInfo(name='md5', value='b65f54c53e08702f3e52689e3e79d923', dir_info=None, size=1365, nfiles=None))])
+
         return dir_info
 
     @use_state
     def get_dir_hash(self, path_info, **kwargs):
         dir_info = self._collect_dir(path_info, **kwargs)
         hash_info = self.repo.cache.local.save_dir_info(dir_info)
+
+        # orig
+        # HashInfo(name='md5', value='e1a0cf7fcebe1c12bc0adeaf7ca38dfd.dir', dir_info=<dvc.dir_info.DirInfo object at 0x1100c4460>, size=1996, nfiles=25)
+
+        # new behavior
+        # HashInfo(name='md5', value='e1a0cf7fcebe1c12bc0adeaf7ca38dfd.dir', dir_info=<dvc.dir_info.DirInfo object at 0x121ea2670>, size=None, nfiles=25)
+
         hash_info.size = dir_info.size
+
+        # orig
+        # dir_info.size = 61854
+
+        # new behavior
+        # dir_info.size = 61854
+
+        self.vdir.hash_info = hash_info  # pass it back so can be accessed by stage
+
         return hash_info
 
     def upload(self, from_info, to_info, name=None, no_progress_bar=False):

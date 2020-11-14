@@ -90,6 +90,25 @@ def create_stage(cls, repo, path, external=False, **kwargs):
             logger.info("Stage is cached, skipping")
             return None
 
+        # The new ./dvc/cache/xx/*.dir has been created here on the orig:
+        # - stage.can_be_skipped
+
+        # On the original behavior, this is what updates the .dvc/cache/xx/*.dir
+        # => stage.can_be_skipped
+        # => stage.is_cached
+        # => old.changed_outs (actually a Stage)
+        # => out.status()
+        # => out.workspace_status() - NOTES: this can be used later for discerning cp, rm, mv
+        # => out.changed_checksum()
+        # => out.get_hash()
+        # => out.cache.get_hash(self.tree, self.path_info)
+        # => cache.base.get_hash()
+        # => tree.get_hash()
+        # => tree.get_dir_hash()
+        # => tree._collect_dir()
+
+        # But on the new behavior, it does not create anything
+
     return stage
 
 

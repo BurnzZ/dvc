@@ -118,6 +118,13 @@ class BaseOutput:
         self.repo = stage.repo if stage else None
         self.def_path = path
         self.hash_info = HashInfo.from_dict(info)
+
+        # for the old behavior
+        # info = {'md5': 'ca33682bbdb304025242bbc1b0d79d52.dir', 'size': 58385, 'nfiles': 24}
+        # HashInfo(name='md5', value='ca33682bbdb304025242bbc1b0d79d52.dir', dir_info=None, size=58385, nfiles=24)
+
+        # the hash_info and info doesn't exist for the new behavior
+
         if tree:
             self.tree = tree
         else:
@@ -180,7 +187,8 @@ class BaseOutput:
     def get_hash(self):
         if not self.use_cache:
             return self.tree.get_hash(self.path_info)
-        return self.cache.get_hash(self.tree, self.path_info)
+        self.hash_info = self.cache.get_hash(self.tree, self.path_info)
+        return self.hash_info
 
     @property
     def is_dir_checksum(self):
@@ -282,11 +290,15 @@ class BaseOutput:
             logger.debug("Output '%s' didn't change. Skipping saving.", self)
             return
 
+        # NOTES: this is the first call of get_hash() which is from stage.save()
         self.hash_info = self.get_hash()
 
     def commit(self):
         if not self.exists:
             raise self.DoesNotExistError(self)
+
+        if self.tree.vdir:
+            self.hash_info = self.stage.outs[0].tree.vdir.hash_info
 
         assert self.hash_info
         if self.use_cache:

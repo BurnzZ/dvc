@@ -30,6 +30,7 @@ def add(
     fname=None,
     external=False,
     glob=False,
+    vdir=None,
 ):
     if recursive and fname:
         raise RecursiveAddingWhileUsingFilename()
@@ -69,7 +70,36 @@ def add(
                 pbar=pbar,
                 external=external,
                 glob=glob,
+                vdir=vdir,
             )
+
+            # NOTES: This will always produce the specific file that was added:
+            #   $ dvc add rpm-images/problem-E-01/B-new.png
+            #
+            #   stages = [Stage: 'rpm-images/problem-E-01/B-new.png.dvc']
+            #
+            # This happens on these both instances:
+            # - full directory (usual behavior)
+            # - partial directory (the new desired behavior)
+            #
+            # It then results in this type of error:
+            #     repo.check_modified_graph(stages)
+            #   *** dvc.exceptions.OverlappingOutputPathsError: Paths for outs:
+            #   'rpm-images'('rpm-images.dvc')
+            #   'rpm-images/problem-E-01/B-new.png'('rpm-images/problem-E-01/B-new.png.dvc')
+            #   overlap. To avoid unpredictable behaviour, rerun command with non overlapping outs paths.
+            #
+            # But when this command is ran, no error is raised (for both full
+            # and partial behaviors):
+            #   $ dvc add rpm-images
+            #
+            #   stages = [Stage: 'rpm-images.dvc']
+
+            # Stuff that has heppened:
+            # - The 'rpm-images.dvc' file is also DELETED here only if it has
+            # seen a change in the data.
+            # - A .dvc/cache/e1/a0cf7fcebe1c12bc0adeaf7ca38dfd.dir file is
+            # added. It also has the 'B-new.png' file declared.
 
             try:
                 repo.check_modified_graph(stages)
@@ -133,10 +163,25 @@ def _process_stages(repo, stages, no_commit, pbar):
             try:
                 if not no_commit:
                     stage.commit()
+
+                    # => out.commit()
+                    # => cache.save(self.path_info, self.cache.tree, self.hash_info)
+                    # => cache._save(path_info, tree, hash_info, save_link, **kwargs)
+                    # => cache._save_dir(path_info, tree, hash_info, save_link, **kwargs)
+                    # =>
+
+
             except CacheLinkError:
                 link_failures.append(stage)
 
+            # The 'stage.commit()' is where the:
+            # - the new file is added into the ./dvc/cache/xx/yy
+
             Dvcfile(repo, stage.path).dump(stage)
+
+            # The 'Dvcfile.dump()' is where the:
+            # - 'rpm-images.dvc' file is updated
+
             pbar_stages.update()
 
     return link_failures
@@ -161,7 +206,7 @@ def _find_all_targets(repo, target, recursive):
 
 
 def _create_stages(
-    repo, targets, fname, pbar=None, external=False, glob=False
+    repo, targets, fname, pbar=None, external=False, glob=False, vdir=None,
 ):
     from glob import iglob
 
@@ -191,9 +236,26 @@ def _create_stages(
             wdir=wdir,
             outs=[out],
             external=external,
+            vdir=vdir,
         )
+        # After 'create_stage':
+        # - the *.dvc file is still intact
+        # - it also has calculated a new .dvc/cache/xx/*.dir when on the orig
+        #     behavior
+
+        # >>> [x for x in stage.outs[0].cache._list_paths()]
+        # ['/Users/burnzz/dev/iterative/explore/.dvc/cache/ca/33682bbdb304025242bbc1b0d79d52.dir']
+
+        # NOTES: need to add this here before the Dvcfile is removed.
+        if vdir:
+            vdir.hash_info = stage.reload().outs[0].hash_info
+
+            # inject the dependency
+            stage.outs[0].tree.vdir = vdir
+
         if stage:
             Dvcfile(repo, stage.path).remove()
+        # The *.dvc file is now deleted.
 
         repo._reset()  # pylint: disable=protected-access
 
