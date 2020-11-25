@@ -39,7 +39,7 @@ def test_add(tmp_dir, dvc):
 
     assert isinstance(stage, Stage)
     assert os.path.isfile(stage.path)
-    assert len(stage.outs) == 1
+    assert len(stage.outs) == 1000
     assert len(stage.deps) == 0
     assert stage.cmd is None
     assert stage.outs[0].hash_info == HashInfo("md5", md5)
